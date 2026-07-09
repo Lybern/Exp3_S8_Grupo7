@@ -1,0 +1,35 @@
+version: '3'
+services:
+  rabbitmq1:
+    image: rabbitmq:3-management
+    hostname: rabbitmq1
+    ports:
+      - "15672:15672"
+      - "5672:5672"
+    environment:
+      RABBITMQ_ERLANG_COOKIE: 'mysecretcookie'
+      RABBITMQ_DEFAULT_USER: user
+      RABBITMQ_DEFAULT_PASS: password
+    networks:
+      - rabbitmq
+
+  rabbitmq2:
+    image: rabbitmq:3-management
+    hostname: rabbitmq2
+    ports:
+      - "15673:15672"
+      - "5673:5672"
+    environment:
+      RABBITMQ_ERLANG_COOKIE: 'mysecretcookie'
+      RABBITMQ_DEFAULT_USER: user
+      RABBITMQ_DEFAULT_PASS: password
+    networks:
+      - rabbitmq
+    depends_on:
+      - rabbitmq1
+    # Script que inicia el nodo, se une al cluster y reinicia
+    command: /bin/bash -c "rabbitmq-server -detached && sleep 10 && rabbitmqctl stop_app && rabbitmqctl join_cluster rabbit@rabbitmq1 && rabbitmqctl start_app && tail -f /dev/null"
+
+networks:
+  rabbitmq:
+    driver: bridge

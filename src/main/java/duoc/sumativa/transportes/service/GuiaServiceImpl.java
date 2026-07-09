@@ -9,6 +9,8 @@ import duoc.sumativa.transportes.model.GuiaDespacho;
 import duoc.sumativa.transportes.model.Pedido;
 import duoc.sumativa.transportes.repository.GuiaRepository;
 import duoc.sumativa.transportes.repository.PedidoRepository;
+import duoc.sumativa.transportes.config.RabbitMQConfig;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -26,6 +28,7 @@ public class GuiaServiceImpl implements GuiaService {
     private final S3Template s3Template;
     private final GuiaRepository guiaRepository;
     private final PedidoRepository pedidoRepository;
+    private final RabbitTemplate rabbitTemplate;
 
     @Value("${aws.s3.bucket}")
     private String nombreBucket;
@@ -33,10 +36,11 @@ public class GuiaServiceImpl implements GuiaService {
     @Value("${ruta.almacenamiento.temporal}")
     private String rutaEfs;
 
-    public GuiaServiceImpl(S3Template s3Template, GuiaRepository guiaRepository, PedidoRepository pedidoRepository) {
+    public GuiaServiceImpl(S3Template s3Template, GuiaRepository guiaRepository, PedidoRepository pedidoRepository, RabbitTemplate rabbitTemplate) {
         this.s3Template = s3Template;
         this.guiaRepository = guiaRepository;
         this.pedidoRepository = pedidoRepository;
+        this.rabbitTemplate = rabbitTemplate;
     }
 
     @Override
@@ -71,6 +75,9 @@ public class GuiaServiceImpl implements GuiaService {
         // 4. Vincular Guia con el Pedido
         pedido.setGuiaDespacho(guiaGuardada);
         pedidoRepository.save(pedido);
+
+        // 5. Enviar ruta a RabbitMQ (Cola 1)
+        rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE, RabbitMQConfig.ROUTING_KEY_PRINCIPAL, rutaDestinoS3);
 
         return rutaDestinoS3;
     }
