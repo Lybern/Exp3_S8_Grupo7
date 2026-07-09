@@ -1,0 +1,112 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch: # Permite gatillar el pipeline manualmente desde la interfaz de GitHub
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. CLONAR CÓDIGO: Descarga el código fuente del repositorio en la máquina virtual del runner
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # 2. ENTORNO JAVA: Configura JDK 21 (Temurin) y activa la caché de Maven para acelerar futuras compilaciones
+      - name: Set up JDK 21
+        uses: actions/setup-java@v3
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      # 3. PERMISOS MAVEN: Le da permisos de ejecución al wrapper de Maven nativo para evitar fallos en Linux
+      - name: Grant execute permission for mvnw
+        run: chmod +x mvnw
+
+      # 4. COMPILAR JAR: Limpia proyectos viejos, descarga dependencias y empaqueta el archivo .jar ignorando los test
+      - name: Build with Maven (skip tests)
+        run: ./mvnw clean package -DskipTests
+
+      # 5. LOGIN DOCKER HUB: Se autentica en Docker Hub usando  credenciales guardadas de forma segura en los Secrets
+      - name: Log in to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 6. CONSTRUIR IMAGEN: Compila la imagen Docker usando el Dockerfile y la etiqueta como 'latest'
+      - name: Build Docker Image
+        run: |
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/microservicio-transportes:latest .
+
+      # 7. SUBIR A DOCKER HUB: Sube la imagen empaquetada a los servidores públicos/privados de Docker Hub
+      - name: Push Docker Image
+        run: |
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/microservicio-transportes:latest
+
+      # 8. CREDENCIALES AWS: Autentica el runner de GitHub Actions con la cuenta de AWS Academy para operaciones de nube
+      - name: Set up AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      # 9. LLAVE SSH: Configura y resguarda la clave privada (.pem) dentro del runner para poder conectarse a la EC2
+      - name: Add SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+      # 10. DESPLIEGUE AUTOMÁTICO EN EC2: Conexión remota por SSH para actualizar el contenedor
+      - name: SSH commands to deploy
+        run: |
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${{ secrets.USER_SERVER }}@${{ secrets.EC2_HOST }} << 'EOF'
+            
+            # Autenticar la máquina EC2 en Docker Hub para descargar la nueva imagen
+            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/microservicio-transportes:latest
+            
+            # RECONSTRUCCIÓN DE ORACLE WALLET CLOUD: Descarga y decodifica las credenciales seguras de la BD Oracle
+            mkdir -p ~/oracle_wallet
+            echo "${{ secrets.ORACLE_WALLET_BASE64 }}" | base64 --decode > ~/oracle_wallet/wallet.zip
+            unzip -j -o ~/oracle_wallet/wallet.zip -d ~/oracle_wallet/
+            sed -i 's|"?/network/admin"|"/app/wallet"|g' ~/oracle_wallet/sqlnet.ora
+            rm -f ~/oracle_wallet/wallet.zip
+            
+            # REQUERIMIENTO EFS: Crea el directorio físico en la EC2 donde se monta el almacenamiento AWS EFS
+            sudo mkdir -p /mnt/efs/guias
+            sudo chmod 777 /mnt/efs/guias
+            
+            # LIMPIEZA: Detiene y elimina el contenedor viejo si es que estaba corriendo para liberar el puerto 8080
+            docker stop microservicio-transportes || true
+            docker rm microservicio-transportes || true
+            
+            # También detiene cualquier otro contenedor ocupando el puerto 8080
+            for container in $(docker ps -q --filter "publish=8080"); do
+              docker stop $container || true
+              docker rm $container || true
+            done
+            
+            # ARRANQUE DE PRODUCCIÓN OPTIMIZADO (Ajustado a tus nuevas variables de application.properties)
+            docker run -d --name microservicio-transportes -p 8080:8080 \
+              -v ~/oracle_wallet:/app/wallet \
+              -v /mnt/efs/guias:/app/efs_storage \
+              -e TNS_ADMIN_PATH="/app/wallet" \
+              -e DB_USERNAME="${{ secrets.ORACLE_DB_USER }}" \
+              -e DB_PASSWORD="${{ secrets.ORACLE_DB_PASSWORD }}" \
+              -e AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID }}" \
+              -e AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
+              -e AWS_REGION="us-east-1" \
+              -e AWS_S3_BUCKET="mibucketcloudnative" \
+              -e RUTA_EFS="/app/efs_storage" \
+              -e AZURE_ISSUER_URI="${{ secrets.AZURE_ISSUER_URI }}" \
+              ${{ secrets.DOCKERHUB_USERNAME }}/microservicio-transportes:latest
+          EOF
