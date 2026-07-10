@@ -73,8 +73,8 @@ public class SecurityConfig {
         JwtGrantedAuthoritiesConverter grantedAuthoritiesConverter = new JwtGrantedAuthoritiesConverter();
         
         // En Azure AD B2C los App Roles generalmente vienen en el claim "roles" o "extension_roles".
-        // Cambiamos al estandar "roles" que es donde viajan los App Roles de Azure.
-        grantedAuthoritiesConverter.setAuthoritiesClaimName("roles");
+        // En Azure AD B2C los atributos personalizados viajan con el prefijo extension_
+        grantedAuthoritiesConverter.setAuthoritiesClaimName("extension_Role");
         
         // Spring Boot está acostumbrado a que todos los roles empiecen con la palabra "ROLE_".
         // Así que le decimos al traductor que le pegue ese texto al principio (ej: Guia.Admin pasará a ser ROLE_Guia.Admin).
