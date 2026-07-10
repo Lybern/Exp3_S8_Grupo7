@@ -47,9 +47,10 @@ Esta arquitectura da cumplimiento perfecto a dicho párrafo de la siguiente form
 **Objetivo:** Conectar el entorno de seguridad de Spring Boot con el Proveedor de Identidad en la Nube (Azure AD B2C).
 
 **Cambios realizados:**
-- Se actualizó la propiedad `spring.security.oauth2.resourceserver.jwt.issuer-uri` reemplazando la variable de entorno por el valor exacto del emisor de Azure B2C: `https://duocazurecloudn.b2clogin.com/tfp/76b75f28-e0f9-4305-9b31-f6f69d880cfe/b2c_1_duocdemoazure_registro_login/v2.0/`.
+- Se actualizó la propiedad `spring.security.oauth2.resourceserver.jwt.issuer-uri` reemplazando la variable por el valor exacto del nuevo emisor de Azure B2C: `https://cloudnduoc.b2clogin.com/tfp/712c9b90-63f4-4de3-813b-231bfd882a22/b2c_1_azurecloud_native_duoc/v2.0/`.
+- **Nota sobre Audiencia (Audience):** Para validar la audiencia en AWS API Gateway se está utilizando el Client ID: `d730c786-e066-416d-814e-0a5a7af0ce4b`.
 - Esta propiedad indica a Spring dónde descargar las claves públicas de Azure para validar matemáticamente la firma de los tokens y asegurar que la fuente del token coincida exactamente con la aplicación en Azure.
-- Se configuró la URL usando el identificador único del Tenant (Tenant ID) en lugar del nombre de dominio, previniendo así errores de validación de Claims del JWT ("iss" claim mismatch).
+- Se configuró la URL usando el identificador único del Tenant (Tenant ID `712c9b90-63f4-4de3-813b-231bfd882a22`) en lugar del nombre de dominio, previniendo así errores de validación de Claims del JWT ("iss" claim mismatch).
 - Se añadieron comentarios detallados y explicativos en todas las secciones (Base de datos, S3, Multipart).
 
 ---
@@ -145,3 +146,17 @@ Para cumplir el ciclo completo de la arquitectura perimetral:
 2. Registrar las nuevas rutas de `/transportes` (`/subir`, `/descargar`, etc.) apuntándolas hacia la IP de la instancia EC2.
 3. Asegurarse de que el **JWT Authorizer** esté activo en estas rutas.
 4. Desplegar la API y realizar la validación final demostrando que el tráfico fluye desde el Gateway, es validado en su rol por la EC2, y finalmente el documento es procesado y almacenado en Amazon S3.
+
+---
+
+## 10. Actualización Semana 8: Sistema Asíncrono con Colas (RabbitMQ)
+Para la octava semana, la arquitectura evolucionó para procesar los documentos de manera asíncrona mediante el uso de colas de mensajería (RabbitMQ), garantizando tolerancia a fallos.
+
+1. **Infraestructura Dockerizada:**
+   Se configuró un clúster de RabbitMQ (Nodos 1 y 2) dentro de contenedores definidos en el `docker-compose.yml`, asegurando alta disponibilidad.
+2. **Productor de Mensajes (Cola Principal):**
+   Al momento de procesar una guía, el servicio `GuiaServiceImpl` ahora envía de forma asíncrona la ruta del archivo S3 hacia la `guia_cola_principal` usando `RabbitTemplate`.
+3. **Consumo y Tolerancia a Fallos (DLQ):**
+   El componente `RabbitMQConsumer` actúa como Listener de la cola. En caso de existir un error durante el procesamiento, el sistema cuenta con una política de reintentos (`SimpleRetryPolicy` de 3 intentos). Si el fallo persiste, el mensaje es descartado de la cola principal y derivado automáticamente a una **Cola de Errores (DLQ - Dead Letter Queue)** llamada `guia_cola_dlq`.
+4. **Persistencia Independiente (Oracle Cloud):**
+   Los mensajes procesados exitosamente por el consumidor de la cola 1 son almacenados en una base de datos Oracle en la nube, dentro de una tabla completamente nueva (`guia_mensajes`) gestionada por la entidad `GuiaMensajeDB`.
