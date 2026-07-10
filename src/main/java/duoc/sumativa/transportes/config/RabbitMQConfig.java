@@ -60,7 +60,7 @@ public class RabbitMQConfig {
     }
 
     @Bean
-    public org.springframework.retry.interceptor.StatelessRetryOperationsInterceptor retryInterceptor() {
+    public org.springframework.retry.interceptor.RetryOperationsInterceptor retryInterceptor() {
         org.springframework.retry.RetryPolicy retryPolicy = new org.springframework.retry.policy.SimpleRetryPolicy(3); // Reintentos
         return org.springframework.amqp.rabbit.config.RetryInterceptorBuilder.stateless()
                 .retryPolicy(retryPolicy)
