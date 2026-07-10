@@ -85,6 +85,28 @@ jobs:
             sudo mkdir -p /mnt/efs/guias
             sudo chmod 777 /mnt/efs/guias
             
+            # CREAR RED DOCKER PARA EL CLUSTER DE RABBITMQ Y LA APP
+            docker network create rabbitmq || true
+
+            # ARRANQUE DE RABBITMQ NODO 1
+            docker stop rabbitmq1 || true
+            docker rm rabbitmq1 || true
+            docker run -d --name rabbitmq1 --hostname rabbitmq1 --network rabbitmq -p 15672:15672 -p 5672:5672 \
+              -e RABBITMQ_ERLANG_COOKIE='mysecretcookie' \
+              -e RABBITMQ_DEFAULT_USER=user \
+              -e RABBITMQ_DEFAULT_PASS=password \
+              rabbitmq:3-management
+
+            # ARRANQUE DE RABBITMQ NODO 2 (Unido al cluster)
+            docker stop rabbitmq2 || true
+            docker rm rabbitmq2 || true
+            docker run -d --name rabbitmq2 --hostname rabbitmq2 --network rabbitmq -p 15673:15672 -p 5673:5672 \
+              -e RABBITMQ_ERLANG_COOKIE='mysecretcookie' \
+              -e RABBITMQ_DEFAULT_USER=user \
+              -e RABBITMQ_DEFAULT_PASS=password \
+              rabbitmq:3-management \
+              /bin/bash -c "rabbitmq-server -detached && sleep 10 && rabbitmqctl stop_app && rabbitmqctl join_cluster rabbit@rabbitmq1 && rabbitmqctl start_app && tail -f /dev/null"
+
             # LIMPIEZA: Detiene y elimina el contenedor viejo si es que estaba corriendo para liberar el puerto 8080
             docker stop microservicio-transportes || true
             docker rm microservicio-transportes || true
@@ -95,10 +117,11 @@ jobs:
               docker rm $container || true
             done
             
-            # ARRANQUE DE PRODUCCIÓN OPTIMIZADO (Ajustado a tus nuevas variables de application.properties)
-            docker run -d --name microservicio-transportes -p 8080:8080 \
+            # ARRANQUE DE PRODUCCIÓN OPTIMIZADO (Conectado a la red de RabbitMQ)
+            docker run -d --name microservicio-transportes --network rabbitmq -p 8080:8080 \
               -v ~/oracle_wallet:/app/wallet \
               -v /mnt/efs/guias:/app/efs_storage \
+              -e SPRING_RABBITMQ_ADDRESSES="rabbitmq1:5672,rabbitmq2:5672" \
               -e TNS_ADMIN_PATH="/app/wallet" \
               -e DB_USERNAME="${{ secrets.ORACLE_DB_USER }}" \
               -e DB_PASSWORD="${{ secrets.ORACLE_DB_PASSWORD }}" \
