@@ -1,14 +1,10 @@
 package duoc.sumativa.transportes.service;
-
-import java.io.IOException;
 import java.time.LocalDateTime;
 
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-
-import com.rabbitmq.client.Channel;
 
 import duoc.sumativa.transportes.config.RabbitMQConfig;
 import duoc.sumativa.transportes.model.GuiaMensajeDB;
@@ -26,7 +22,7 @@ public class RabbitMQConsumer {
         String rutaS3 = new String(mensaje.getBody(), "UTF-8");
         System.out.println("Mensaje recibido de Cola 1: " + rutaS3);
         
-        // Simulamos o ejecutamos una logica de validacion
+        // Simular la lógica de validación de la ruta S3. Si la ruta es inválida, se lanza una excepción para activar los reintentos.
         if (rutaS3 == null || rutaS3.isEmpty() || rutaS3.contains("error")) {
             // AL LANZAR LA EXCEPCIÓN, SE ACTIVA LA POLÍTICA DE REINTENTOS (3 intentos)
             // Si falla 3 veces, el RejectAndDontRequeueRecoverer lo mandará a la DLQ

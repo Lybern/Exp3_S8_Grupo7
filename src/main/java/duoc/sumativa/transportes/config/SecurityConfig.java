@@ -63,11 +63,7 @@ public class SecurityConfig {
     }
 
  
-    /**
-     * Este componente es como un "traductor".
-     * Cuando llega el Token desde Azure, Azure guarda los roles configurados en la App Registration en el atributo "roles".
-     * Este traductor se encarga de buscar ese nombre y transformarlo a un formato que Spring Boot entienda.
-     */
+
     @Bean
     public JwtAuthenticationConverter jwtAuthenticationConverter() {
         JwtGrantedAuthoritiesConverter grantedAuthoritiesConverter = new JwtGrantedAuthoritiesConverter();
